@@ -1,0 +1,30 @@
+{
+  "scriptFile": "__init__.py",
+  "bindings": [
+    {
+      "authLevel": "function",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": [
+        "get",
+        "post"
+      ]
+    },
+    {
+      "type": "cosmosDB",
+      "direction": "in",
+      "name": "doc",
+      "databaseName": "Drafts",
+      "collectionName": "clusters",
+      "createIfNotExists": "true",
+      "connectionStringSetting": "AzureCosmosDBConnectionString",
+      "sqlQuery": "SELECT c.championId, c.cluster, c.role from c"
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "$return"
+    }
+  ]
+}

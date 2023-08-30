@@ -1,0 +1,30 @@
+{
+  "scriptFile": "__init__.py",
+  "bindings": [
+    {
+      "authLevel": "function",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": [
+        "get",
+        "post"
+      ]
+    },
+    {
+      "type": "cosmosDB",
+      "direction": "in",
+      "name": "doc",
+      "databaseName": "Drafts",
+      "collectionName": "competitive",
+      "createIfNotExists": "true",
+      "connectionStringSetting": "AzureCosmosDBConnectionString",
+      "sqlQuery": "SELECT c.game_id, c.side_winner, c.cluster1, c.cluster2, c.cluster3, c.cluster4, c.cluster5, c.cluster6, c.cluster7, c.cluster8, c.cluster9, c.cluster10, c.role1, c.role2, c.role3, c.role4, c.role5, c.role6, c.role7, c.role8, c.role9, c.role10  from c"
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "$return"
+    }
+  ]
+}
