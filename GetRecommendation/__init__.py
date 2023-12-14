@@ -3,7 +3,7 @@ import pandas as pd
 import azure.functions as func
 import json
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+from scipy.stats import mode
     
     
 def get_general_cluster(cluster, role):
@@ -45,21 +45,6 @@ def recommend_pick(games_df, draftRotation, draftSelection):
     # Preprocessing
     pick_features = games_df[pick_columns]
     
-    def should_exclude_pick(existing_picks, pick):
-        # Define the ranges and their corresponding conditions
-        ranges = [(0, 3), (4, 7), (8, 10), (11, 13)]
-        conditions = [
-            (len(existing_picks) % 2 == 1 and pick % 2 == 1),
-            (len(existing_picks) % 2 == 1 and pick % 2 == 0),
-            (len(existing_picks) % 2 == 0 and pick % 2 == 1),
-            (len(existing_picks) % 2 == 0 and pick % 2 == 0)
-        ]
-        
-        for i, (start, end) in enumerate(ranges):
-            if start <= pick <= end and conditions[i]:
-                return True
-        return False
-    
     # Define a function to recommend the next champion pick
     def recommend_next_pick(draftSelection, draftRotation, pick_features):
 
@@ -74,80 +59,35 @@ def recommend_pick(games_df, draftRotation, draftSelection):
         for pick in draftSelection:
             target_draft.append(get_general_cluster(pick['cluster'], pick['role']))
             
-        # agrupa todos los drafts junto con el que se busca recomendación
-        drafts.append(target_draft)
-        drafts_array = np.array(drafts)
-
-        # se genera la matriz de similaridad del coseno, esta es cuadrada y muestra la similitud de todos con todos los drafts
-        cosine_sim = cosine_similarity(drafts_array)
-
-        # se genera un df con los valores de similitud, indice del draft con similitud hacia el draft a recomendar y la recomendación de siguiente pick
-        cosine_sim = cosine_sim[:-1, -1]
-        similarity_json = {
-            "cosine_similarity": cosine_sim
-        }
-        similarity_df = pd.DataFrame(similarity_json)
-        similarity_df = similarity_df.sort_values(by=['cosine_similarity'], ascending=False)
-        similarity_df['recommendation'] = similarity_df.apply(lambda row: drafts[row.name][draftRotation], axis=1)
-
-        # se obtienen todos los posibles clusters a elegir
-        available_picks = [pick for pick in range(1, 18) if pick not in target_draft and not should_exclude_pick([item for item in target_draft if item != -99], pick)]
-
-        # se busca, de mayor a menor similitud el cluster que pueda seleccionarse y se devuelve
-        for index, recommendation in similarity_df.iterrows():
-            if recommendation['recommendation'] in available_picks:
-                return int(recommendation['recommendation'])
+        
+            
+        def find_arrays_with_same_prefix(desired_array, array_list, n):
+            desired_prefix = desired_array[:n]
+            matching_arrays = [arr for arr in array_list if np.array_equal(arr[:n], desired_prefix)]
+            return matching_arrays
+        
+        def get_mode_at_position(array_of_arrays, position):
+            values_at_position = [arr[position] for arr in array_of_arrays]
+            result = mode(values_at_position)
+            return result.mode.item()
+        
+        drafts_with_same_picks = find_arrays_with_same_prefix(target_draft, drafts, draftRotation - 1)
+        
+        if len(drafts_with_same_picks) > 0:
+            most_common_cluster = get_mode_at_position(drafts_with_same_picks, draftRotation - 1)
+            return most_common_cluster
+        else:
+            # if there is no similar drafts, gets the most common pick for that pick turn
+            most_common_cluster = get_mode_at_position(drafts, draftRotation - 1)
+            return most_common_cluster
+        
+        
             
     recommended_pick = recommend_next_pick(draftSelection, draftRotation, pick_features)
     return get_cluster_role(recommended_pick)
 
 
     
-
-def find_most_repeated_role(df, draftRotation, draftSelection):
-    games_df = pd.DataFrame()
-    filtered_df = pd.DataFrame()
-    
-    roles_values = {}
-    clusters_values = {}
-    for pickIndex in range(0, draftRotation):
-        role_column_name = 'role' + str(pickIndex + 1)
-        cluster_column_name = 'cluster' + str(pickIndex + 1)
-        roles_values[role_column_name] = draftSelection[pickIndex]['role']
-        clusters_values[cluster_column_name] = int(draftSelection[pickIndex]['cluster'])
-    
-    
-    role_condition = True
-    for column, role in roles_values.items():
-        role_condition &= (df[column] == role)
-    games_df = df[role_condition]
-    
-    
-    
-    cluster_condition = True
-    for column, cluster in clusters_values.items():
-        cluster_condition &= (df[column] == cluster)
-    filtered_df = df[cluster_condition]
-    
-    
-    if not filtered_df.empty:
-        most_repeated_cluster = filtered_df['cluster' + str(draftRotation)].mode().iloc[0]
-        most_repeated_role = filtered_df['role' + str(draftRotation)].mode().iloc[0]
-        return [most_repeated_role, str(most_repeated_cluster)]
-    else:
-        calculation = None
-        for column, cluster in clusters_values.items():
-            step = (games_df[column] - cluster) ** 2
-            if calculation is None:
-                calculation = step
-            else:
-                calculation += step
-        
-        idx_min = calculation.idxmin()
-        closest_combination = games_df.iloc[idx_min]
-        return [closest_combination['role' + str(draftRotation)], str(closest_combination['cluster' + str(draftRotation)])]
-
-
 # {
 #     "draftRotation": 2,
 #     "draftSelection": [{"cluster": "4", "role": "top"}, {"cluster": "3", "role": "jungle"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}, {"cluster": "", "role": "unselected"}]
@@ -164,7 +104,6 @@ def main(req: func.HttpRequest, doc:func.DocumentList) -> func.HttpResponse:
     
     result = recommend_pick(df, req_body['draftRotation'], req_body['draftSelection'])
     
-    # result = find_most_repeated_role(df, req_body['draftRotation'], req_body['draftSelection'])
 
     response_raw = {"recommendation": result}
     response = json.dumps(response_raw)
